@@ -487,8 +487,22 @@ apply_yaml_files() {
 deploy_test_backstage_provider() {
   local project=$1
   echo "Deploying test-backstage-customization-provider in namespace ${project}"
-  oc new-app https://github.com/janus-qe/test-backstage-customization-provider --namespace="${project}"
-  oc expose svc/test-backstage-customization-provider --namespace="${project}"
+
+  # Check if the buildconfig already exists
+  if ! oc get buildconfig test-backstage-customization-provider -n "${project}" >/dev/null 2>&1; then
+    echo "Creating new app for test-backstage-customization-provider"
+    oc new-app https://github.com/janus-qe/test-backstage-customization-provider --namespace="${project}"
+  else
+    echo "BuildConfig for test-backstage-customization-provider already exists in ${project}. Skipping new-app creation."
+  fi
+
+  # Ensure the service exists
+  if ! oc get service test-backstage-customization-provider -n "${project}" >/dev/null 2>&1; then
+    echo "Exposing service for test-backstage-customization-provider"
+    oc expose svc/test-backstage-customization-provider --namespace="${project}"
+  else
+    echo "Service test-backstage-customization-provider is already exposed in ${project}."
+  fi
 }
 
 create_app_config_map() {
