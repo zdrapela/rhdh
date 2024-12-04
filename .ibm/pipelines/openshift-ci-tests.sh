@@ -50,35 +50,35 @@ main() {
   echo "JOB_NAME : $JOB_NAME"
 
   case "$JOB_NAME" in
-        *aks*)
-          echo "Calling handle_aks"
-          handle_aks
-          ;;
-        *gke*)
-          echo "Calling handle_gke"
-           handle_gke
-          ;;
-        *periodic*)
-          echo "Calling handle_periodic"
-          handle_nightly
-          ;;
-        *pull-*-main-e2e-tests*)
-          echo "Calling handle_main"
-          handle_main
-          ;;
-        *ocp-v4-16*)
-          echo "Calling handle_ocp_v4_16"
-          handle_ocp_v4_16
-          ;;
-        *ocp-v4-15*)
-          echo "Calling handle_ocp_v4_15"
-          handle_ocp_v4_15
-          ;;
-        *operator*)
-          echo "Calling Operator"
-          handle_operator
-          ;;
-      esac
+    *aks*)
+      echo "Calling handle_aks"
+      handle_aks
+      ;;
+    *gke*)
+      echo "Calling handle_gke"
+       handle_gke
+      ;;
+    *periodic*)
+      echo "Calling handle_periodic"
+      handle_nightly
+      ;;
+    *pull-*-main-e2e-tests*)
+      echo "Calling handle_main"
+      handle_main
+      ;;
+    *ocp-v4-16*)
+      echo "Calling handle_ocp_v4_16"
+      handle_ocp_v4_16
+      ;;
+    *ocp-v4-15*)
+      echo "Calling handle_ocp_v4_15"
+      handle_ocp_v4_15
+      ;;
+    *operator*)
+      echo "Calling Operator"
+      handle_operator
+      ;;
+  esac
 
 echo "K8S_CLUSTER_ROUTER_BASE : $K8S_CLUSTER_ROUTER_BASE"
 echo "Main script completed with result: ${OVERALL_RESULT}"
