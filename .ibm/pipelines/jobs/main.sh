@@ -28,6 +28,11 @@ handle_main() {
   set_github_app_4_credentials
   set_namespace
   oc_login
+
+  API_SERVER_URL=$(oc whoami --show-server)
+  ENCODED_API_SERVER_URL=$(echo "${API_SERVER_URL}" | base64)
+  ENCODED_CLUSTER_NAME=$(echo "my-cluster" | base64)
+
   export K8S_CLUSTER_ROUTER_BASE=$(oc get route console -n openshift-console -o=jsonpath='{.spec.host}' | sed 's/^[^.]*\.//')
   local url="https://${RELEASE_NAME}-backstage-${NAME_SPACE}.${K8S_CLUSTER_ROUTER_BASE}"
   initiate_deployments

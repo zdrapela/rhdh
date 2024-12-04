@@ -8,6 +8,11 @@ handle_nightly() {
   export NAME_SPACE_RBAC_K8S="showcase-rbac-k8s-ci-nightly"
 
   oc_login
+
+  API_SERVER_URL=$(oc whoami --show-server)
+  ENCODED_API_SERVER_URL=$(echo "${API_SERVER_URL}" | base64)
+  ENCODED_CLUSTER_NAME=$(echo "my-cluster" | base64)
+
   export K8S_CLUSTER_ROUTER_BASE=$(oc get route console -n openshift-console -o=jsonpath='{.spec.host}' | sed 's/^[^.]*\.//')
 
   configure_namespace "${NAME_SPACE}"
