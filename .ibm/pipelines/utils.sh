@@ -474,7 +474,7 @@ apply_yaml_files() {
     # Select the configuration file based on the namespace or job
     config_file=$(select_config_map_file)
     # Apply the ConfigMap with the correct file
-    create_app_config_map "$config_file" "$project"
+    create_app_config_map_k8s "$config_file" "$project"
     oc create configmap rbac-policy \
       --from-file="rbac-policy.csv"="$dir/resources/config_map/rbac-policy.csv" \
       --namespace="$project" \
@@ -523,14 +523,14 @@ select_config_map_file() {
   fi
 }
 
-create_app_configmap_aks_gke() {
-    local dir=$1
+create_app_config_map_k8s() {
+    local config_file=$1
     local project=$2
 
     echo "Creating app-config ConfigMap for AKS/GKE in namespace ${project}"
 
     # Modifica o YAML e aplica no cluster
-    yq 'del(.backend.cache)' "${dir}/resources/config_map/app-config-rhdh.yaml" \
+    yq 'del(.backend.cache)' "$config_file" \
     | oc create configmap app-config-rhdh \
         --from-file="app-config-rhdh.yaml"="/dev/stdin" \
         --namespace="${project}" \
@@ -723,5 +723,3 @@ oc_login() {
   echo "OCP version: $(oc version)"
   export K8S_CLUSTER_ROUTER_BASE=$(oc get route console -n openshift-console -o=jsonpath='{.spec.host}' | sed 's/^[^.]*\.//')
 }
-
-

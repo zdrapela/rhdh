@@ -16,6 +16,10 @@ handle_aks() {
   az_aks_start "${AKS_NIGHTLY_CLUSTER_NAME}" "${AKS_NIGHTLY_CLUSTER_RESOURCEGROUP}"
   az_aks_approuting_enable "${AKS_NIGHTLY_CLUSTER_NAME}" "${AKS_NIGHTLY_CLUSTER_RESOURCEGROUP}"
   az_aks_get_credentials "${AKS_NIGHTLY_CLUSTER_NAME}" "${AKS_NIGHTLY_CLUSTER_RESOURCEGROUP}"
+ 
+  API_SERVER_URL=$(oc whoami --show-server)
+  ENCODED_API_SERVER_URL=$(echo "${API_SERVER_URL}" | base64)
+  ENCODED_CLUSTER_NAME=$(echo "my-cluster" | base64)
 
   set_github_app_3_credentials
 

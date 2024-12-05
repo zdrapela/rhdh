@@ -5,7 +5,7 @@ export PS4='[$(date "+%Y-%m-%d %H:%M:%S")] ' # logs timestamp for every cmd.
 
 LOGFILE="test-log"
 export DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-secret_name="rhdh-k8s-plugin-secret"
+export secret_name="rhdh-k8s-plugin-secret"
 OVERALL_RESULT=0
 
 cleanup() {
@@ -56,7 +56,7 @@ main() {
       ;;
     *gke*)
       echo "Calling handle_gke"
-       handle_gke
+      handle_gke
       ;;
     *periodic*)
       echo "Calling handle_periodic"
