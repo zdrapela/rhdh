@@ -474,7 +474,11 @@ apply_yaml_files() {
     # Select the configuration file based on the namespace or job
     config_file=$(select_config_map_file)
     # Apply the ConfigMap with the correct file
-    create_app_config_map_k8s "$config_file" "$project"
+    if [[ "${project}" == *showcase-k8s* ]]; then
+      create_app_config_map_k8s "$config_file" "$project"
+    else
+      create_app_config_map "$config_file" "$project"
+    fi
     oc create configmap rbac-policy \
       --from-file="rbac-policy.csv"="$dir/resources/config_map/rbac-policy.csv" \
       --namespace="$project" \
@@ -529,7 +533,6 @@ create_app_config_map_k8s() {
 
     echo "Creating app-config ConfigMap for AKS/GKE in namespace ${project}"
 
-    # Modifica o YAML e aplica no cluster
     yq 'del(.backend.cache)' "$config_file" \
     | oc create configmap app-config-rhdh \
         --from-file="app-config-rhdh.yaml"="/dev/stdin" \
