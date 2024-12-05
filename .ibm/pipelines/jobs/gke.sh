@@ -18,7 +18,7 @@ handle_gke() {
   check_and_test "${RELEASE_NAME}" "${NAME_SPACE_K8S}" "${url}"
   delete_namespace "${NAME_SPACE_K8S}"
   initiate_rbac_gke_deployment
-  check_and_test "${RELEASE_NAME_RBAC}" "${NAME_SPACE_RBAC_K8S}"
+  check_and_test "${RELEASE_NAME_RBAC}" "${NAME_SPACE_RBAC_K8S}" "${url}"
   delete_namespace "${NAME_SPACE_RBAC_K8S}"
 
 }
