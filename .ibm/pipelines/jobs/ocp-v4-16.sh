@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 handle_ocp_4_16() {
   K8S_CLUSTER_URL=$(cat /tmp/secrets/RHDH_OS_1_CLUSTER_URL)

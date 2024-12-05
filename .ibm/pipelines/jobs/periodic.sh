@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 handle_nightly() {
   export NAME_SPACE="showcase-ci-nightly"
