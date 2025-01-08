@@ -12,10 +12,6 @@ OVERALL_RESULT=0
 # shellcheck disable=SC2317
 cleanup() {
   echo "Cleaning up before exiting"
-  if [[ "$JOB_NAME" == *aks* && "${OPENSHIFT_CI}" == "true" ]]; then
-    # If the job is for Azure Kubernetes Service (AKS), stop the AKS cluster.
-    az_aks_stop "${AKS_NIGHTLY_CLUSTER_NAME}" "${AKS_NIGHTLY_CLUSTER_RESOURCEGROUP}"
-  fi
   rm -rf ~/tmpbin
 }
 
