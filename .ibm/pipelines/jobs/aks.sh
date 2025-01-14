@@ -11,9 +11,10 @@ handle_aks() {
 
   url="https://${K8S_CLUSTER_ROUTER_BASE}"
 
-  if kubectl auth whoami > /dev/null 2>&1; then
+  if oc whoami --show-server > /dev/null 2>&1; then
     echo "Using an ephemeral AKS cluster."
   else
+    exit 1
     echo "Falling back to a long-running AKS cluster."
     export K8S_CLUSTER_TOKEN=$(cat /tmp/secrets/AKS_CLUSTER_TOKEN)
     export K8S_CLUSTER_TOKEN_ENCODED=$(printf "%s" $K8S_CLUSTER_TOKEN | base64 | tr -d '\n')
