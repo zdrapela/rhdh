@@ -223,10 +223,22 @@ export class UIhelper {
       .click();
   }
 
-  async goToSettingsPage() {
+  async goToSettingsPageUi() {
     await expect(this.page.locator("nav[id='global-header']")).toBeVisible();
     await this.openProfileDropdown();
     await this.clickLink({ href: "/settings" });
+  }
+
+  async goToPageUrl(
+    url: string,
+    heading?: string,
+    waitUntil?: "load" | "domcontentloaded" | "networkidle" | "commit",
+  ) {
+    await this.page.goto(url, { waitUntil: waitUntil });
+    await expect(this.page).toHaveURL(url);
+    if (heading) {
+      await this.verifyHeading(heading);
+    }
   }
 
   async goToMyProfilePage() {
