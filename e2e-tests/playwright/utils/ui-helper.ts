@@ -224,8 +224,10 @@ export class UIhelper {
   }
 
   async goToSettingsPageUi() {
-    await expect(this.page.locator("nav[id='global-header']")).toBeVisible();
-    await this.openProfileDropdown();
+    const settingsVisible = await this.isLinkVisible("Settings");
+    if (!settingsVisible) {
+      await this.openProfileDropdown();
+    }
     await this.clickLink({ href: "/settings" });
   }
 
