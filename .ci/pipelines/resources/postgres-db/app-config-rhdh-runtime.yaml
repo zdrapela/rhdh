@@ -11,12 +11,6 @@ backend:
   baseUrl: ${RHDH_RUNTIME_URL}
   cors:
     origin: ${RHDH_RUNTIME_URL}
-  database:
-    connection: # configure Backstage DB connection parameters
-      host: ${POSTGRES_HOST}
-      port: ${POSTGRES_PORT}
-      user: ${POSTGRES_USER}
-      password: ${POSTGRES_PASSWORD}
 auth:
   environment: development
   providers:

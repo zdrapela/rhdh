@@ -6,6 +6,7 @@ import {
   configurePostgresCertificate,
   configurePostgresCredentials,
   clearDatabase,
+  prepareForExternalDatabase,
 } from "../../utils/postgres-config";
 
 interface AzureDbConfig {
@@ -59,6 +60,10 @@ test.describe("Verify TLS configuration with Azure Database for PostgreSQL healt
     }
 
     const kubeClient = new KubeClient();
+
+    // Prepare the deployment for external database tests: patch the app-config
+    // to use env var placeholders and clean up any schema-mode env var patches
+    await prepareForExternalDatabase(kubeClient, namespace, deploymentName);
 
     // Create/update the postgres-crt secret with Azure certificates
     console.log(

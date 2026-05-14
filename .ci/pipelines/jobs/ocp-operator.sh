@@ -12,6 +12,8 @@ source "$DIR"/install-methods/operator.sh
 source "$DIR"/lib/testing.sh
 # shellcheck source=.ci/pipelines/playwright-projects.sh
 source "$DIR"/playwright-projects.sh
+# shellcheck source=.ci/pipelines/lib/schema-mode-env.sh
+source "$DIR"/lib/schema-mode-env.sh
 
 initiate_operator_deployments() {
   log::info "Initiating Operator-backed deployments on OCP"
@@ -83,18 +85,41 @@ initiate_operator_deployments_osd_gcp() {
 }
 
 run_operator_runtime_config_change_tests() {
-  # Deploy `showcase-runtime` to run tests that require configuration changes at runtime
+  # Deploy `showcase-runtime` with internal (operator-managed) DB.
+  # Pre-wire postgres-crt for external DB TLS cert mount.
+  # postgres-cred is NOT injected as env vars (would override operator's internal DB config).
+  # Instead, a separate rhdh-runtime-config secret provides RHDH_RUNTIME_URL.
   namespace::configure "${NAME_SPACE_RUNTIME}"
-  config::create_app_config_map "$DIR/resources/postgres-db/rds-app-config.yaml" "${NAME_SPACE_RUNTIME}"
-  # Pre-create placeholder secrets so the operator accepts the Backstage CR (enableLocalDb=false).
-  # The E2E tests (RDS/Azure DB) will overwrite these with real credentials at runtime.
+  config::create_app_config_map "$DIR/resources/postgres-db/app-config-rhdh-runtime.yaml" "${NAME_SPACE_RUNTIME}"
   local runtime_url="https://backstage-${RELEASE_NAME}-${NAME_SPACE_RUNTIME}.${K8S_CLUSTER_ROUTER_BASE}"
-  create_postgres_cred_secret "${NAME_SPACE_RUNTIME}" "tmp" "tmp" "RHDH_RUNTIME_URL=${runtime_url}"
+  # Create rhdh-runtime-config secret with RHDH_RUNTIME_URL for app-config baseUrl resolution.
+  # This is separate from postgres-cred to avoid injecting POSTGRES_* env vars that would
+  # override the operator's internal DB connection.
+  oc create secret generic rhdh-runtime-config \
+    --from-literal=RHDH_RUNTIME_URL="${runtime_url}" \
+    --dry-run=client -o yaml | oc apply -f - --namespace="${NAME_SPACE_RUNTIME}"
+  # Pre-create placeholder postgres-cred and postgres-crt secrets for external DB tests.
+  # These are NOT referenced by the Backstage CR but will be used by E2E tests at runtime.
+  create_postgres_cred_secret "${NAME_SPACE_RUNTIME}" "tmp" "tmp"
   oc apply -f "$DIR/resources/postgres-db/postgres-crt.yaml" -n "${NAME_SPACE_RUNTIME}"
   config::create_dynamic_plugins_config "${DIR}/value_files/${HELM_CHART_VALUE_FILE_NAME}" "/tmp/configmap-dynamic-plugins-runtime.yaml"
+  # Disable plugins that require external configuration (GitHub org, Keycloak, etc.)
+  # not available in the minimal runtime namespace. Toggle existing entries in-place
+  # rather than appending duplicates.
+  sed -i.bak '/backstage-plugin-catalog-backend-module-github-dynamic/{n;s/disabled: false/disabled: true/}' /tmp/configmap-dynamic-plugins-runtime.yaml
+  sed -i.bak '/backstage-community-plugin-catalog-backend-module-keycloak-dynamic/{n;s/disabled: false/disabled: true/}' /tmp/configmap-dynamic-plugins-runtime.yaml
+  rm -f /tmp/configmap-dynamic-plugins-runtime.yaml.bak
   oc apply -f /tmp/configmap-dynamic-plugins-runtime.yaml -n "${NAME_SPACE_RUNTIME}"
-  deploy_rhdh_operator "${NAME_SPACE_RUNTIME}" "${DIR}/resources/rhdh-operator/rhdh-start-runtime.yaml" "true"
-  testing::run_tests "${RELEASE_NAME}" "${NAME_SPACE_RUNTIME}" "${PW_PROJECT_SHOWCASE_RUNTIME}" "${runtime_url}" || true
+  deploy_rhdh_operator "${NAME_SPACE_RUNTIME}" "${DIR}/resources/rhdh-operator/rhdh-start-runtime-local.yaml"
+
+  # Configure schema-mode environment (opt-in: tests skip if env not configured)
+  if configure_schema_mode_runtime_env "${NAME_SPACE_RUNTIME}" "${RELEASE_NAME}"; then
+    log::info "Schema-mode environment configured successfully; schema-mode tests will run"
+  else
+    log::warn "Schema-mode environment not configured; schema-mode tests will skip (this is expected if PostgreSQL is not available)"
+  fi
+
+  testing::run_tests "${RELEASE_NAME}" "${NAME_SPACE_RUNTIME}" "${PW_PROJECT_SHOWCASE_RUNTIME_DB}" "${runtime_url}" || true
 }
 
 handle_ocp_operator() {

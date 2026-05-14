@@ -51,6 +51,9 @@ export class SchemaModeTestSetup {
   }
 
   private getSecretName(): string {
+    if (this.installMethod === "operator") {
+      return `backstage-psql-secret-${this.releaseName}`;
+    }
     return `${this.releaseName}-postgresql`;
   }
 
@@ -72,22 +75,30 @@ export class SchemaModeTestSetup {
   }
 
   /**
-   * Resolve the PostgreSQL host that RHDH pods should use (in-cluster DNS).
+   * Resolve the PostgreSQL host that RHDH pods should use (in-cluster DNS)
+   * and whether the target is the Helm sub-chart's internal PostgreSQL.
    * The test runner connects via localhost port-forward, but pods need the
    * cluster-internal address.
    */
-  private resolveRhdhPostgresHost(): string {
+  private resolveRhdhPostgresHost(): { host: string; isInternal: boolean } {
     const pfNamespace = process.env.SCHEMA_MODE_PORT_FORWARD_NAMESPACE;
 
     if (pfNamespace && pfNamespace !== this.namespace) {
-      return `postgress-external-db-primary.${pfNamespace}.svc.cluster.local`;
+      return {
+        host: `postgress-external-db-primary.${pfNamespace}.svc.cluster.local`,
+        isInternal: false,
+      };
     }
 
     if (this.env.dbHost === "localhost" || this.env.dbHost === "127.0.0.1") {
-      return `${this.releaseName}-postgresql`;
+      const host =
+        this.installMethod === "operator"
+          ? `backstage-psql-${this.releaseName}`
+          : `${this.releaseName}-postgresql`;
+      return { host, isInternal: true };
     }
 
-    return this.env.dbHost;
+    return { host: this.env.dbHost, isInternal: false };
   }
 
   /**
@@ -102,7 +113,8 @@ export class SchemaModeTestSetup {
 
     const deploymentName = this.getDeploymentName();
     const secretName = this.getSecretName();
-    const rhdhPostgresHost = this.resolveRhdhPostgresHost();
+    const { host: rhdhPostgresHost, isInternal } =
+      this.resolveRhdhPostgresHost();
     console.log(`RHDH pods will connect to PostgreSQL at: ${rhdhPostgresHost}`);
 
     // 1. Update secret with schema-mode credentials
@@ -131,7 +143,7 @@ export class SchemaModeTestSetup {
     await this.ensureDeploymentEnvVars(deploymentName, secretName);
 
     // 3. Update app-config ConfigMap for schema mode
-    await this.updateAppConfigForSchemaMode();
+    await this.updateAppConfigForSchemaMode(isInternal);
 
     // 4. Restart to apply changes
     console.log("Restarting RHDH to apply schema mode configuration...");
@@ -213,7 +225,9 @@ export class SchemaModeTestSetup {
     console.log("Added env vars to deployment");
   }
 
-  private async updateAppConfigForSchemaMode(): Promise<void> {
+  private async updateAppConfigForSchemaMode(
+    isInternalDb: boolean,
+  ): Promise<void> {
     const configMapName = await this.kubeClient.findAppConfigMap(
       this.namespace,
     );
@@ -256,18 +270,28 @@ export class SchemaModeTestSetup {
     }
 
     console.log("Updating app-config for schema mode...");
+    const connection: Record<string, unknown> = {
+      host: "${POSTGRES_HOST}",
+      port: "${POSTGRES_PORT}",
+      user: "${POSTGRES_USER}",
+      password: "${POSTGRES_PASSWORD}",
+      database: "${POSTGRES_DB}",
+    };
+
+    if (isInternalDb) {
+      // Bitnami PostgreSQL sub-chart doesn't enable SSL by default
+      console.log("Using non-SSL connection for internal PostgreSQL");
+    } else {
+      // External databases (Crunchy, RDS, Azure) typically require SSL
+      connection.ssl = { rejectUnauthorized: false };
+      console.log("Using SSL connection for external PostgreSQL");
+    }
+
     appConfig.backend.database = {
       client: "pg",
       pluginDivisionMode: "schema",
       ensureSchemaExists: true,
-      connection: {
-        host: "${POSTGRES_HOST}",
-        port: "${POSTGRES_PORT}",
-        user: "${POSTGRES_USER}",
-        password: "${POSTGRES_PASSWORD}",
-        database: "${POSTGRES_DB}",
-        ssl: { rejectUnauthorized: false },
-      },
+      connection,
     };
 
     configMap.data[configKey] = yaml.dump(appConfig);

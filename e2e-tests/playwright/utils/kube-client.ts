@@ -71,6 +71,30 @@ export function getRhdhDeploymentName(): string {
   return `${releaseName}-developer-hub`;
 }
 
+/**
+ * Waits for the RHDH deployment to be ready in the runtime namespace.
+ * Resolves deployment name automatically based on install method (Helm vs Operator).
+ *
+ * @param timeoutMs - Maximum time to wait in milliseconds (default: 600000 = 10 minutes)
+ */
+export async function waitForRuntimeDeploymentReady(
+  timeoutMs: number = 600000,
+): Promise<void> {
+  const namespace = process.env.NAME_SPACE_RUNTIME || "showcase-runtime";
+  const deploymentName = getRhdhDeploymentName();
+  const kubeClient = new KubeClient();
+  console.log(
+    `Waiting for deployment '${deploymentName}' to be ready in namespace '${namespace}'...`,
+  );
+  await kubeClient.waitForDeploymentReady(
+    deploymentName,
+    namespace,
+    1,
+    timeoutMs,
+  );
+  console.log(`Deployment '${deploymentName}' is ready.`);
+}
+
 export class KubeClient {
   coreV1Api: k8s.CoreV1Api;
   appsApi: k8s.AppsV1Api;
@@ -603,6 +627,16 @@ export class KubeClient {
             condition.type === "PodScheduled" &&
             condition.status === "False"
           ) {
+            // Ephemeral volume PVC provisioning causes a brief Unschedulable state
+            // that resolves once the PVC is created. Treat as transient, not fatal.
+            // Only match the specific ephemeral volume controller message to avoid
+            // masking real PVC binding failures (e.g., no storage class, PVC never binds).
+            if (condition.message?.includes("ephemeral volume controller")) {
+              console.log(
+                `Pod ${podName} waiting for ephemeral volume provisioning (transient)`,
+              );
+              continue;
+            }
             return `Pod ${podName} cannot be scheduled: ${condition.reason} - ${condition.message}`;
           }
           if (
@@ -737,6 +771,9 @@ export class KubeClient {
               finalLabelSelector,
               "backstage-backend",
             );
+            // Also capture init container logs (e.g. install-dynamic-plugins)
+            // since init container failures are a common cause of pod startup issues
+            await this.logPodInitContainerLogs(namespace, finalLabelSelector);
             throw new Error(
               `Deployment ${deploymentName} failed to start: ${podFailureReason}`,
             );
@@ -1001,6 +1038,73 @@ export class KubeClient {
     } catch (error) {
       console.error(
         `Error retrieving pod logs: ${getKubeApiErrorMessage(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Capture logs from all init containers in pods matching the selector.
+   * Init containers (e.g. install-dynamic-plugins) are a common source of
+   * startup failures but their logs were previously not captured.
+   */
+  async logPodInitContainerLogs(namespace: string, labelSelector?: string) {
+    const selector =
+      labelSelector ||
+      "app.kubernetes.io/component=backstage,app.kubernetes.io/instance=rhdh,app.kubernetes.io/name=backstage";
+
+    try {
+      const podsResponse = await this.coreV1Api.listNamespacedPod(
+        namespace,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        selector,
+      );
+
+      if (podsResponse.body.items.length === 0) return;
+
+      for (const pod of podsResponse.body.items.slice(0, 2)) {
+        const podName = pod.metadata?.name;
+        if (!podName) continue;
+
+        const initContainers = pod.spec?.initContainers || [];
+        for (const ic of initContainers) {
+          const cn = ic.name;
+          try {
+            console.log(
+              `\n=== Pod ${podName} - Init Container ${cn} Logs (last 100 lines) ===`,
+            );
+            const logs = await this.coreV1Api.readNamespacedPodLog(
+              podName,
+              namespace,
+              cn,
+              false, // follow
+              undefined, // limitBytes
+              undefined, // pretty
+              undefined, // previous
+              undefined, // sinceSeconds
+              100, // tailLines
+            );
+            if (logs.body) {
+              const logLines = logs.body.split("\n");
+              logLines.forEach((line) => {
+                if (line.trim()) console.log(line);
+              });
+            } else {
+              console.log("(No logs available)");
+            }
+          } catch (logError) {
+            const errorMsg = getKubeApiErrorMessage(logError);
+            console.warn(
+              `Could not retrieve init container logs for pod ${podName} container ${cn}: ${errorMsg}`,
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Error retrieving init container logs: ${getKubeApiErrorMessage(error)}`,
       );
     }
   }

@@ -1,10 +1,15 @@
 import { test, expect } from "@support/coverage/test";
-import { KubeClient, getRhdhDeploymentName } from "../../utils/kube-client";
+import {
+  KubeClient,
+  getRhdhDeploymentName,
+  waitForRuntimeDeploymentReady,
+} from "../../utils/kube-client";
 import { Common } from "../../utils/common";
 import { UIhelper } from "../../utils/ui-helper";
 
 test.describe("Change app-config at e2e test runtime", () => {
   test.beforeAll(async () => {
+    test.setTimeout(600000); // 10 minutes for deployment readiness
     test.info().annotations.push(
       {
         type: "component",
@@ -15,6 +20,11 @@ test.describe("Change app-config at e2e test runtime", () => {
         description: process.env.NAME_SPACE_RUNTIME || "showcase-runtime",
       },
     );
+
+    // Wait for the deployment to be ready before running tests.
+    // This test runs first in the showcase-runtime project, so the deployment
+    // may still be starting up from the initial operator/helm install.
+    await waitForRuntimeDeploymentReady();
   });
 
   test("Verify title change after ConfigMap modification", async ({ page }) => {
