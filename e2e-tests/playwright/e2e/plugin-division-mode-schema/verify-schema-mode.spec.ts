@@ -11,6 +11,7 @@ import { test, expect } from "@support/coverage/test";
 import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { Common } from "../../utils/common";
 import { KubeClient } from "../../utils/kube-client";
+import { isOperatorDeployment } from "../../utils/helper";
 import { setPortForwardRestarter } from "./schema-mode-db";
 import { SchemaModeTestSetup } from "./schema-mode-setup";
 
@@ -78,15 +79,16 @@ function killPortForward(
 test.describe("Verify pluginDivisionMode: schema", () => {
   const namespace = process.env.NAME_SPACE_RUNTIME || "showcase-runtime";
   const releaseName = process.env.RELEASE_NAME || "developer-hub";
-  const installMethod = (
-    process.env.INSTALL_METHOD === "operator" ? "operator" : "helm"
-  ) as "helm" | "operator";
+  const installMethod: "helm" | "operator" = isOperatorDeployment()
+    ? "operator"
+    : "helm";
 
   let portForwardProcess: ChildProcessWithoutNullStreams | undefined;
   let testSetup: SchemaModeTestSetup;
 
   test.beforeAll(async ({}, testInfo) => {
-    test.setTimeout(300000);
+    // Operator restarts are slower due to reconciliation; allow extra time.
+    test.setTimeout(600000);
 
     const hasPortForwardMeta =
       !!process.env.SCHEMA_MODE_PORT_FORWARD_NAMESPACE &&

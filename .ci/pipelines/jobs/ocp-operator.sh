@@ -113,7 +113,7 @@ run_operator_runtime_config_change_tests() {
   deploy_rhdh_operator "${NAME_SPACE_RUNTIME}" "${DIR}/resources/rhdh-operator/rhdh-start-runtime-local.yaml"
 
   # Configure schema-mode environment (opt-in: tests skip if env not configured)
-  if configure_schema_mode_runtime_env "${NAME_SPACE_RUNTIME}" "${RELEASE_NAME}"; then
+  if configure_schema_mode_runtime_env "${NAME_SPACE_RUNTIME}" "${RELEASE_NAME}" operator; then
     log::info "Schema-mode environment configured successfully; schema-mode tests will run"
   else
     log::warn "Schema-mode environment not configured; schema-mode tests will skip (this is expected if PostgreSQL is not available)"

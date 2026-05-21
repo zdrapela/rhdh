@@ -104,12 +104,14 @@ export class SchemaModeTestSetup {
   /**
    * Configure RHDH for schema mode:
    * 1. Update the Secret with schema-mode test user credentials
-   * 2. Patch the Deployment to inject POSTGRES_* env vars from the Secret
+   * 2. Patch the Deployment to inject POSTGRES_* env vars from the Secret (Helm only)
    * 3. Update the app-config ConfigMap for schema mode
-   * 4. Restart the deployment
+   * 4. Restart the deployment (with retry for operator reconciliation)
    */
   async configureRHDH(): Promise<void> {
-    console.log("Configuring RHDH for schema mode...");
+    console.log(
+      `Configuring RHDH for schema mode (${this.installMethod})...`,
+    );
 
     const deploymentName = this.getDeploymentName();
     const secretName = this.getSecretName();
@@ -117,38 +119,105 @@ export class SchemaModeTestSetup {
       this.resolveRhdhPostgresHost();
     console.log(`RHDH pods will connect to PostgreSQL at: ${rhdhPostgresHost}`);
 
-    // 1. Update secret with schema-mode credentials
+    // 1. Update secret with schema-mode credentials.
+    //    For operator: the operator injects env vars from the managed secret
+    //    via envFrom, so we must preserve keys the PostgreSQL image needs
+    //    (POSTGRESQL_ADMIN_PASSWORD) while adding/overriding POSTGRES_* keys.
+    const secretData: Record<string, string> = {
+      password: Buffer.from(this.env.dbPassword).toString("base64"),
+      "postgres-password": Buffer.from(this.env.dbPassword).toString("base64"),
+      POSTGRES_PASSWORD: Buffer.from(this.env.dbPassword).toString("base64"),
+      POSTGRES_DB: Buffer.from(this.env.dbName).toString("base64"),
+      POSTGRES_USER: Buffer.from(this.env.dbUser).toString("base64"),
+      POSTGRES_HOST: Buffer.from(rhdhPostgresHost).toString("base64"),
+      POSTGRES_PORT: Buffer.from("5432").toString("base64"),
+    };
+
+    if (this.installMethod === "operator") {
+      // Preserve POSTGRESQL_ADMIN_PASSWORD — the operator-managed PostgreSQL
+      // image reads this on startup (set_passwords.sh). Without it the
+      // StatefulSet pod fails to start.
+      try {
+        const existing = await this.kubeClient.coreV1Api.readNamespacedSecret(
+          secretName,
+          this.namespace,
+        );
+        const existingData = existing.body.data || {};
+        if (existingData.POSTGRESQL_ADMIN_PASSWORD) {
+          secretData.POSTGRESQL_ADMIN_PASSWORD =
+            existingData.POSTGRESQL_ADMIN_PASSWORD;
+        }
+      } catch {
+        console.warn(
+          `Could not read existing secret ${secretName}; POSTGRESQL_ADMIN_PASSWORD may be lost`,
+        );
+      }
+    }
+
     await this.kubeClient.createOrUpdateSecret(
       {
         metadata: { name: secretName },
-        data: {
-          password: Buffer.from(this.env.dbPassword).toString("base64"),
-          "postgres-password": Buffer.from(this.env.dbPassword).toString(
-            "base64",
-          ),
-          POSTGRES_PASSWORD: Buffer.from(this.env.dbPassword).toString(
-            "base64",
-          ),
-          POSTGRES_DB: Buffer.from(this.env.dbName).toString("base64"),
-          POSTGRES_USER: Buffer.from(this.env.dbUser).toString("base64"),
-          POSTGRES_HOST: Buffer.from(rhdhPostgresHost).toString("base64"),
-          POSTGRES_PORT: Buffer.from("5432").toString("base64"),
-        },
+        data: secretData,
       },
       this.namespace,
     );
     console.log(`Updated secret ${secretName} with schema-mode credentials`);
 
-    // 2. Ensure POSTGRES_* env vars are set in the deployment
-    await this.ensureDeploymentEnvVars(deploymentName, secretName);
+    // 2. Ensure POSTGRES_* env vars are set in the deployment (Helm only).
+    //    Operator deployments inject env vars from the managed secret via
+    //    envFrom in the StatefulSet/Deployment spec. Patching the Deployment
+    //    directly would be reverted by operator reconciliation.
+    if (this.installMethod !== "operator") {
+      await this.ensureDeploymentEnvVars(deploymentName, secretName);
+    } else {
+      console.log(
+        "Skipping Deployment env var patch for operator " +
+          "(env vars injected via envFrom from managed secret)",
+      );
+    }
 
     // 3. Update app-config ConfigMap for schema mode
     await this.updateAppConfigForSchemaMode(isInternal);
 
-    // 4. Restart to apply changes
-    console.log("Restarting RHDH to apply schema mode configuration...");
-    await this.kubeClient.restartDeployment(deploymentName, this.namespace);
-    console.log("RHDH restart completed");
+    // 4. Restart to apply changes (with retry for operator reconciliation)
+    await this.restartWithRetry(deploymentName);
+  }
+
+  /**
+   * Restart the RHDH deployment, retrying up to {@link maxAttempts} times.
+   * Operator reconciliation can cause transient rollout failures, so we
+   * tolerate a limited number of restart errors before giving up.
+   */
+  private async restartWithRetry(
+    deploymentName: string,
+    maxAttempts = 3,
+  ): Promise<void> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(
+          `Restarting RHDH (attempt ${attempt}/${maxAttempts})...`,
+        );
+        await this.kubeClient.restartDeployment(
+          deploymentName,
+          this.namespace,
+        );
+        console.log("RHDH restart completed");
+        return;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (attempt < maxAttempts) {
+          console.warn(
+            `Restart attempt ${attempt}/${maxAttempts} failed: ${msg}. ` +
+              `Retrying in 30s...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 30000));
+        } else {
+          throw new Error(
+            `RHDH restart failed after ${maxAttempts} attempts: ${msg}`,
+          );
+        }
+      }
+    }
   }
 
   private async ensureDeploymentEnvVars(
